@@ -112,51 +112,193 @@ function removeRedundantNodes(nodes) {
 	return keep;
 }
 
-function parseNode(node){
-	/** @type {ASTNode[]} */
+function parseIdentiferNode(node){
 	const targetNodes = [node];
-	switch (node.type) {
-		case 'Identifier': {
-			const refs = node.references;
-			// Review the declaration of an identifier
-			if (node.declNode && node.declNode.parentNode) {
-				targetNodes.push(node.declNode.parentNode);
-			}
-			else if (refs?.length && node.parentNode) targetNodes.push(node.parentNode);
-			for (let i = 0; i < refs?.length; i++) {
-				const ref = refs[i];
-				// Review call expression that receive the identifier as an argument for possible augmenting functions
-				if ((ref.parentKey === 'arguments' && ref.parentNode.type === 'CallExpression') ||
-					// Review direct assignments to the identifier
-					(ref.parentKey === 'left' &&
-						ref.parentNode.type === 'AssignmentExpression' &&
-						node.parentNode.type !== 'FunctionDeclaration' &&   // Skip function reassignments
-						!isConsequentOrAlternate(ref))) {
-					targetNodes.push(ref.parentNode);
-					// Review assignments to property
-				} else if (isNodeAnAssignmentToProperty(ref)) {
-					targetNodes.push(ref.parentNode.parentNode);
-				}
-			}
-			break;
+	const refs = node.references;
+	// Review the declaration of an identifier
+	if (node.declNode && node.declNode.parentNode) {
+		targetNodes.push(node.declNode.parentNode);
+	}
+	else if (refs?.length && node.parentNode) targetNodes.push(node.parentNode);
+	for (let i = 0; i < refs?.length; i++) {
+		const ref = refs[i];
+		// Review call expression that receive the identifier as an argument for possible augmenting functions
+		if ((ref.parentKey === 'arguments' && ref.parentNode.type === 'CallExpression') ||
+			// Review direct assignments to the identifier
+			(ref.parentKey === 'left' &&
+				ref.parentNode.type === 'AssignmentExpression' &&
+				node.parentNode.type !== 'FunctionDeclaration' &&   // Skip function reassignments
+				!isConsequentOrAlternate(ref))) {
+			targetNodes.push(ref.parentNode);
+			// Review assignments to property
+		} else if (isNodeAnAssignmentToProperty(ref)) {
+			targetNodes.push(ref.parentNode.parentNode);
 		}
-		case 'MemberExpression':
-			if (node.property?.declNode) targetNodes.push(node.property.declNode);
-			break;
-		case 'FunctionExpression':
-			// Review the parent node of anonymous functions to understand their context
-			if (!node.id) {
-				let targetParent = node;
-				while (targetParent.parentNode && !STANDALONE_WRAPPER_TYPES.includes(targetParent.type)) {
-					targetParent = targetParent.parentNode;
-				}
-				if (STANDALONE_WRAPPER_TYPES.includes(targetParent.type)) {
-					targetNodes.push(targetParent);
-				}
-			}
-			break;
 	}
 	return targetNodes;
+}
+
+function parseFunctionExpressionNode(node){
+	const targetNodes = [node];
+	// Review the parent node of anonymous functions to understand their context
+	if (!node.id) {
+		let targetParent = node;
+		while (targetParent.parentNode && !STANDALONE_WRAPPER_TYPES.includes(targetParent.type)) {
+			targetParent = targetParent.parentNode;
+		}
+		if (STANDALONE_WRAPPER_TYPES.includes(targetParent.type)) {
+			targetNodes.push(targetParent);
+		}
+	}
+	return targetNodes;
+}
+
+function parseMemberExpressionNode(node){
+	const targetNodes = [node];
+	if (node.property?.declNode) targetNodes.push(node.property.declNode);
+	return targetNodes;
+}
+
+/**
+ * 
+ * @param {ASTNode} node 
+ * @returns {ASTNode[]} // Relevant nodes to parse.
+ */
+function parseNode(node){
+	switch (node.type) {
+		case 'Identifier': 
+			return parseIdentiferNode(node);
+		case 'MemberExpression':
+			return parseMemberExpressionNode(node);
+		case 'FunctionExpression':
+			return parseFunctionExpressionNode(node);
+		default:
+			return [node];
+	}
+}
+
+/**
+ * @param {ASTNode} originNode - The starting AST node to collect context for
+ * @param {boolean} [excludeOriginNode=false] - Whether to exclude the origin node from results
+ * @param {ASTNode} collectedNodes 
+ * @returns {Set<ASTNode>} // Filtered collected nodes
+ */
+function filterNodes(originNode, excludeOriginNode, collectedNodes){
+	/** @type {Set<ASTNode>} */
+	const filteredNodes = new Set();
+	
+	for (let i = 0; i < collectedNodes.length; i++) {
+		const n = collectedNodes[i];
+		
+		// Skip if already added, irrelevant type, or should be excluded
+		if (filteredNodes.has(n) || 
+			IRRELEVANT_FILTER_TYPES.includes(n.type) ||
+			(excludeOriginNode && isNodeInRanges(n, [originNode.range]))) {
+			continue;
+		}
+		
+		// Handle anti-debugging function overwrites by ignoring reassigned functions
+		if (n.type === 'FunctionDeclaration' && n.id?.references?.length) {
+			let hasNonAssignmentReference = false;
+			const references = n.id.references;
+			
+			for (let j = 0; j < references.length; j++) {
+				const ref = references[j];
+				if (!(ref.parentKey === 'left' && ref.parentNode?.type === 'AssignmentExpression')) {
+					hasNonAssignmentReference = true;
+					break;
+				}
+			}
+			
+			if (hasNonAssignmentReference) {
+				filteredNodes.add(n);
+			}
+		} else {
+			filteredNodes.add(n);
+		}
+	}
+	return filteredNodes;
+}
+
+/**
+ * @param {ASTNode} originNode - The starting AST node to collect context for
+ * @param {boolean} [excludeOriginNode=false] - Whether to exclude the origin node from results
+ * @return {ASTNode[]} Array of context nodes (declarations, assignments, calls) relevant for evaluation
+ */
+function _getDeclarationWithContext(originNode, excludeOriginNode = false){
+	/** @type {ASTNode[]} */
+	const stack = [originNode];   // The working stack for nodes to be reviewed
+	/** @type {ASTNode[]} */
+	const collected = [];         // These will be our context
+	/** @type {Set<number>} */
+	const visitedNodes = new Set();  // Track visited nodes to prevent infinite loops
+	/** @type {Set<number>} */
+	const addedNodes = new Set();  // Track nodes added to stack to avoid includes calls on stack.
+	/** @type {number[][]} */
+	const collectedRanges = [];   // Prevent collecting overlapping nodes
+	
+	/**
+	 * Adds a node to the traversal stack if it hasn't been visited and is worth traversing.
+	 * @param {ASTNode} node - Node to potentially add to stack
+	 */
+	function addToStack(node) {
+		if (!node || 
+			visitedNodes.has(node.nodeId) ||
+			addedNodes.has(node.nodeId) ||
+			SKIP_TRAVERSAL_TYPES.includes(node.type)) {
+			return;
+		}
+		addedNodes.add(node.nodeId);
+		stack.push(node);
+	}
+
+	/**
+	 * Adds targetNodes to stack.
+	 * @param {ASTNode} targetNodes - Nodes to add to stack
+	 */
+	function addNodesToStack(targetNodes){
+		for (let i = 0; i < targetNodes.length; i++) {
+			const targetNode = targetNodes[i];
+			if (!visitedNodes.has(targetNode.nodeId)) stack.push(targetNode);
+			// noinspection JSUnresolvedVariable
+			if (targetNode === targetNode.scope.block) {
+				// Collect out-of-scope variables used inside the scope
+				// noinspection JSUnresolvedReference
+				for (let j = 0; j < targetNode.scope.through.length; j++) {
+					// noinspection JSUnresolvedReference
+					addToStack(targetNode.scope.through[j].identifier);
+				}
+			}
+			for (let j = 0; j < targetNode?.childNodes.length; j++) {
+				addToStack(targetNode.childNodes[j]);
+			}
+		}
+	}
+
+	while (stack.length) {
+		const node = stack.shift();
+		if(visitedNodes.size % 10000 == 0) console.log('stack length: ',stack.length, ' visitedNodes: ', visitedNodes.size);
+
+		if (visitedNodes.has(node.nodeId)) continue;
+		visitedNodes.add(node.nodeId);
+		
+		// Do not collect any context if one of the relevant nodes is marked to be replaced or deleted
+		if (node.isMarked || doesDescendantMatchCondition(node, n => n.isMarked)) {
+			collected.length = 0;
+			break;
+		}
+
+		if (TYPES_TO_COLLECT.includes(node.type) && !isNodeInRanges(node, collectedRanges)) {
+			collected.push(node);
+			collectedRanges.push(node.range);
+		}
+
+		// For each node, whether collected or not, target relevant relative nodes for further review.
+		addNodesToStack(parseNode(node));
+
+	}
+	// Filter and deduplicate collected nodes
+	return filterNodes(originNode, excludeOriginNode, collected);
 }
 
 
@@ -182,104 +324,15 @@ export function getDeclarationWithContext(originNode, excludeOriginNode = false)
 	if (!originNode) {
 		return [];
 	}
-	/** @type {ASTNode[]} */
-	const stack = [originNode];   // The working stack for nodes to be reviewed
-	/** @type {ASTNode[]} */
-	const collected = [];         // These will be our context
-	/** @type {Set<number>} */
-	const visitedNodes = new Set();  // Track visited nodes to prevent infinite loops
-	/** @type {number[][]} */
-	const collectedRanges = [];   // Prevent collecting overlapping nodes
 	
-	/**
-	 * Adds a node to the traversal stack if it hasn't been visited and is worth traversing.
-	 * @param {ASTNode} node - Node to potentially add to stack
-	 */
-	function addToStack(node) {
-		if (!node || 
-			visitedNodes.has(node.nodeId) ||
-			stack.includes(node) ||
-			SKIP_TRAVERSAL_TYPES.includes(node.type)) {
-			return;
-		}
-		stack.push(node);
-	}
-
 	const cache = getCache(originNode.scriptHash);
 	const srcHash = generateHash(originNode.src);
 	const cacheNameId = `context-${originNode.nodeId}-${srcHash}`;
 	const cacheNameSrc = `context-${srcHash}`;
 	let cached = cache[cacheNameId] || cache[cacheNameSrc];
 	if (!cached) {
-		while (stack.length) {
-			const node = stack.shift();
-			if (visitedNodes.has(node.nodeId)) continue;
-			visitedNodes.add(node.nodeId);
-			// Do not collect any context if one of the relevant nodes is marked to be replaced or deleted
-			if (node.isMarked || doesDescendantMatchCondition(node, n => n.isMarked)) {
-				collected.length = 0;
-				break;
-			}
+		let filteredNodes = _getDeclarationWithContext(originNode, excludeOriginNode);
 
-			if (TYPES_TO_COLLECT.includes(node.type) && !isNodeInRanges(node, collectedRanges)) {
-				collected.push(node);
-				collectedRanges.push(node.range);
-			}
-
-			// For each node, whether collected or not, target relevant relative nodes for further review.
-			const targetNodes = parseNode(node);
-
-			for (let i = 0; i < targetNodes.length; i++) {
-				const targetNode = targetNodes[i];
-				if (!visitedNodes.has(targetNode.nodeId)) stack.push(targetNode);
-				// noinspection JSUnresolvedVariable
-				if (targetNode === targetNode.scope.block) {
-					// Collect out-of-scope variables used inside the scope
-					// noinspection JSUnresolvedReference
-					for (let j = 0; j < targetNode.scope.through.length; j++) {
-						// noinspection JSUnresolvedReference
-						addToStack(targetNode.scope.through[j].identifier);
-					}
-				}
-				for (let j = 0; j < targetNode?.childNodes.length; j++) {
-					addToStack(targetNode.childNodes[j]);
-				}
-			}
-		}
-		// Filter and deduplicate collected nodes
-		/** @type {Set<ASTNode>} */
-		const filteredNodes = new Set();
-		
-		for (let i = 0; i < collected.length; i++) {
-			const n = collected[i];
-			
-			// Skip if already added, irrelevant type, or should be excluded
-			if (filteredNodes.has(n) || 
-				IRRELEVANT_FILTER_TYPES.includes(n.type) ||
-				(excludeOriginNode && isNodeInRanges(n, [originNode.range]))) {
-				continue;
-			}
-			
-			// Handle anti-debugging function overwrites by ignoring reassigned functions
-			if (n.type === 'FunctionDeclaration' && n.id?.references?.length) {
-				let hasNonAssignmentReference = false;
-				const references = n.id.references;
-				
-				for (let j = 0; j < references.length; j++) {
-					const ref = references[j];
-					if (!(ref.parentKey === 'left' && ref.parentNode?.type === 'AssignmentExpression')) {
-						hasNonAssignmentReference = true;
-						break;
-					}
-				}
-				
-				if (hasNonAssignmentReference) {
-					filteredNodes.add(n);
-				}
-			} else {
-				filteredNodes.add(n);
-			}
-		}
 		// Convert to array and remove redundant nodes
 		cached = removeRedundantNodes([...filteredNodes]);
 		cache[cacheNameId] = cached;        // Caching context for the same node
