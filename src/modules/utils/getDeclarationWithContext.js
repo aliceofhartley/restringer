@@ -112,6 +112,54 @@ function removeRedundantNodes(nodes) {
 	return keep;
 }
 
+function parseNode(node){
+	/** @type {ASTNode[]} */
+	const targetNodes = [node];
+	switch (node.type) {
+		case 'Identifier': {
+			const refs = node.references;
+			// Review the declaration of an identifier
+			if (node.declNode && node.declNode.parentNode) {
+				targetNodes.push(node.declNode.parentNode);
+			}
+			else if (refs?.length && node.parentNode) targetNodes.push(node.parentNode);
+			for (let i = 0; i < refs?.length; i++) {
+				const ref = refs[i];
+				// Review call expression that receive the identifier as an argument for possible augmenting functions
+				if ((ref.parentKey === 'arguments' && ref.parentNode.type === 'CallExpression') ||
+					// Review direct assignments to the identifier
+					(ref.parentKey === 'left' &&
+						ref.parentNode.type === 'AssignmentExpression' &&
+						node.parentNode.type !== 'FunctionDeclaration' &&   // Skip function reassignments
+						!isConsequentOrAlternate(ref))) {
+					targetNodes.push(ref.parentNode);
+					// Review assignments to property
+				} else if (isNodeAnAssignmentToProperty(ref)) {
+					targetNodes.push(ref.parentNode.parentNode);
+				}
+			}
+			break;
+		}
+		case 'MemberExpression':
+			if (node.property?.declNode) targetNodes.push(node.property.declNode);
+			break;
+		case 'FunctionExpression':
+			// Review the parent node of anonymous functions to understand their context
+			if (!node.id) {
+				let targetParent = node;
+				while (targetParent.parentNode && !STANDALONE_WRAPPER_TYPES.includes(targetParent.type)) {
+					targetParent = targetParent.parentNode;
+				}
+				if (STANDALONE_WRAPPER_TYPES.includes(targetParent.type)) {
+					targetNodes.push(targetParent);
+				}
+			}
+			break;
+	}
+	return targetNodes;
+}
+
+
 /**
  * Collects all declarations and call expressions that provide context for evaluating a given AST node.
  * This function gathers relevant nodes needed for safe code evaluation,
@@ -156,6 +204,7 @@ export function getDeclarationWithContext(originNode, excludeOriginNode = false)
 		}
 		stack.push(node);
 	}
+
 	const cache = getCache(originNode.scriptHash);
 	const srcHash = generateHash(originNode.src);
 	const cacheNameId = `context-${originNode.nodeId}-${srcHash}`;
@@ -171,55 +220,14 @@ export function getDeclarationWithContext(originNode, excludeOriginNode = false)
 				collected.length = 0;
 				break;
 			}
+
 			if (TYPES_TO_COLLECT.includes(node.type) && !isNodeInRanges(node, collectedRanges)) {
 				collected.push(node);
 				collectedRanges.push(node.range);
 			}
 
 			// For each node, whether collected or not, target relevant relative nodes for further review.
-			/** @type {ASTNode[]} */
-			const targetNodes = [node];
-			switch (node.type) {
-				case 'Identifier': {
-					const refs = node.references;
-					// Review the declaration of an identifier
-					if (node.declNode && node.declNode.parentNode) {
-						targetNodes.push(node.declNode.parentNode);
-					}
-					else if (refs?.length && node.parentNode) targetNodes.push(node.parentNode);
-					for (let i = 0; i < refs?.length; i++) {
-						const ref = refs[i];
-						// Review call expression that receive the identifier as an argument for possible augmenting functions
-						if ((ref.parentKey === 'arguments' && ref.parentNode.type === 'CallExpression') ||
-							// Review direct assignments to the identifier
-							(ref.parentKey === 'left' &&
-								ref.parentNode.type === 'AssignmentExpression' &&
-								node.parentNode.type !== 'FunctionDeclaration' &&   // Skip function reassignments
-								!isConsequentOrAlternate(ref))) {
-							targetNodes.push(ref.parentNode);
-							// Review assignments to property
-						} else if (isNodeAnAssignmentToProperty(ref)) {
-							targetNodes.push(ref.parentNode.parentNode);
-						}
-					}
-					break;
-				}
-				case 'MemberExpression':
-					if (node.property?.declNode) targetNodes.push(node.property.declNode);
-					break;
-				case 'FunctionExpression':
-					// Review the parent node of anonymous functions to understand their context
-					if (!node.id) {
-						let targetParent = node;
-						while (targetParent.parentNode && !STANDALONE_WRAPPER_TYPES.includes(targetParent.type)) {
-							targetParent = targetParent.parentNode;
-						}
-						if (STANDALONE_WRAPPER_TYPES.includes(targetParent.type)) {
-							targetNodes.push(targetParent);
-						}
-					}
-					break;
-			}
+			const targetNodes = parseNode(node);
 
 			for (let i = 0; i < targetNodes.length; i++) {
 				const targetNode = targetNodes[i];
