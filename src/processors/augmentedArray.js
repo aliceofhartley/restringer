@@ -121,7 +121,7 @@ export function augmentedArrayTransform(arb, n) {
 	const ref = !declKind ? `${relevantArrayIdentifier.name}()` : relevantArrayIdentifier.name;
 	
 	// Build execution context: array declaration + IIFE + array reference for final state
-	const contextNodes = getDeclarationWithContext(n, true);
+	const contextNodes = getDeclarationWithContext(n, arb.ast, true);
 	const context = `${contextNodes.length ? createOrderedSrc(contextNodes) : ''}`;
 	const src = `${context};\n${createOrderedSrc([targetNode])}\n${ref};`;
 	

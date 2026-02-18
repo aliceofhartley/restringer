@@ -63,7 +63,7 @@ export function resolveFunctionToArrayTransform(arb, matches) {
 		let src = '';
 		if (![n.init, n.init?.parentNode].includes(targetNode)) {
 			// Function is defined elsewhere, include its context
-			src += createOrderedSrc(getDeclarationWithContext(targetNode));
+			src += createOrderedSrc(getDeclarationWithContext(targetNode, arb.ast));
 		}
 		
 		// Add the function call to evaluate

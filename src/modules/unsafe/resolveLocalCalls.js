@@ -122,7 +122,7 @@ export function resolveLocalCallsTransform(arb, matches) {
 				// Build execution context in sandbox
 				const contextSb = new Sandbox();
 				try {
-					contextSb.run(createOrderedSrc(getDeclarationWithContext(declNode.parentNode)));
+					contextSb.run(createOrderedSrc(getDeclarationWithContext(declNode.parentNode, arb.ast)));
 					if (Object.keys(cache) >= CACHE_LIMIT) cache.flush();
 					cache[cacheName] = contextSb;
 				} catch {}

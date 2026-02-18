@@ -59,7 +59,7 @@ export function resolveInjectedPrototypeMethodCallsTransform(arb, matches) {
 		
 		try {
 			// Build execution context including the prototype assignment
-			const context = getDeclarationWithContext(match.assignmentNode);
+			const context = getDeclarationWithContext(match.assignmentNode, arb.ast);
 			const contextSb = new Sandbox();
 			contextSb.run(createOrderedSrc(context));
 

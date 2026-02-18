@@ -46,7 +46,7 @@ export function resolveEvalCallsOnNonLiteralsTransform(arb, matches) {
 		const n = matches[i];
 		
 		// Gather context nodes that might be referenced by the eval argument
-		const contextNodes = getDeclarationWithContext(n, true);
+		const contextNodes = getDeclarationWithContext(n, arb.ast, true);
 		
 		// Remove any nodes that are part of the eval expression itself to avoid circular references
 		const possiblyRedundantNodes = [n, n?.parentNode, n?.parentNode?.parentNode];

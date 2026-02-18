@@ -222,12 +222,13 @@ function filterNodes(originNode, excludeOriginNode, collectedNodes){
 
 /**
  * @param {ASTNode} originNode - The starting AST node to collect context for
+ * @param {ASTNode[]} ast
  * @param {boolean} [excludeOriginNode=false] - Whether to exclude the origin node from results
  * @return {ASTNode[]} Array of context nodes (declarations, assignments, calls) relevant for evaluation
  */
-function _getDeclarationWithContext(originNode, excludeOriginNode = false){
-	/** @type {ASTNode[]} */
-	const stack = [originNode];   // The working stack for nodes to be reviewed
+function _getDeclarationWithContext(originNode, ast, excludeOriginNode = false){
+	/** @type {number[]} */
+	const stack = [originNode.nodeId];   // The working stack for nodes to be reviewed
 	/** @type {ASTNode[]} */
 	const collected = [];         // These will be our context
 	/** @type {Set<number>} */
@@ -249,7 +250,7 @@ function _getDeclarationWithContext(originNode, excludeOriginNode = false){
 			return;
 		}
 		addedNodes.add(node.nodeId);
-		stack.push(node);
+		stack.push(node.nodeId);
 	}
 
 	/**
@@ -259,7 +260,7 @@ function _getDeclarationWithContext(originNode, excludeOriginNode = false){
 	function addNodesToStack(targetNodes){
 		for (let i = 0; i < targetNodes.length; i++) {
 			const targetNode = targetNodes[i];
-			if (!visitedNodes.has(targetNode.nodeId)) stack.push(targetNode);
+			if (!visitedNodes.has(targetNode.nodeId)) stack.push(targetNode.nodeId);
 			// noinspection JSUnresolvedVariable
 			if (targetNode === targetNode.scope.block) {
 				// Collect out-of-scope variables used inside the scope
@@ -276,9 +277,7 @@ function _getDeclarationWithContext(originNode, excludeOriginNode = false){
 	}
 
 	while (stack.length) {
-		const node = stack.shift();
-		if(visitedNodes.size % 10000 == 0) console.log('stack length: ',stack.length, ' visitedNodes: ', visitedNodes.size);
-
+		const node = ast[stack.shift()];
 		if (visitedNodes.has(node.nodeId)) continue;
 		visitedNodes.add(node.nodeId);
 		
@@ -301,6 +300,28 @@ function _getDeclarationWithContext(originNode, excludeOriginNode = false){
 	return filterNodes(originNode, excludeOriginNode, collected);
 }
 
+/**
+ * @param {ASTNode} originNode - The starting AST node to collect context for
+ * @param {ASTNode[]} ast
+ * @param {boolean} [excludeOriginNode=false] - Whether to exclude the origin node from results
+ * @return {ASTNode[]} Array of context nodes (declarations, assignments, calls) relevant for evaluation
+ */
+function processOrReturnCachedValue(originNode, ast, excludeOriginNode = false){
+	const cache = getCache(originNode.scriptHash);
+	const srcHash = generateHash(originNode.src);
+	const cacheNameId = `context-${originNode.nodeId}-${srcHash}`;
+	const cacheNameSrc = `context-${srcHash}`;
+	let cached = cache[cacheNameId] || cache[cacheNameSrc];
+	if (!cached) {
+		let filteredNodes = _getDeclarationWithContext(originNode, ast, excludeOriginNode);
+
+		// Convert to array and remove redundant nodes
+		cached = removeRedundantNodes([...filteredNodes]);
+		cache[cacheNameId] = cached;        // Caching context for the same node
+		cache[cacheNameSrc] = cached;       // Caching context for a different node with similar content
+	}
+	return cached;
+}
 
 /**
  * Collects all declarations and call expressions that provide context for evaluating a given AST node.
@@ -316,27 +337,14 @@ function _getDeclarationWithContext(originNode, excludeOriginNode = false){
  * - Marked nodes (scheduled for replacement/deletion) - aborts collection if found
  *
  * @param {ASTNode} originNode - The starting AST node to collect context for
+ * @param {ASTNode} ast
  * @param {boolean} [excludeOriginNode=false] - Whether to exclude the origin node from results
  * @return {ASTNode[]} Array of context nodes (declarations, assignments, calls) relevant for evaluation
  */
-export function getDeclarationWithContext(originNode, excludeOriginNode = false) {
+export function getDeclarationWithContext(originNode, ast, excludeOriginNode = false) {
 	// Input validation to prevent crashes
-	if (!originNode) {
+	if (!originNode || !ast) {
 		return [];
 	}
-	
-	const cache = getCache(originNode.scriptHash);
-	const srcHash = generateHash(originNode.src);
-	const cacheNameId = `context-${originNode.nodeId}-${srcHash}`;
-	const cacheNameSrc = `context-${srcHash}`;
-	let cached = cache[cacheNameId] || cache[cacheNameSrc];
-	if (!cached) {
-		let filteredNodes = _getDeclarationWithContext(originNode, excludeOriginNode);
-
-		// Convert to array and remove redundant nodes
-		cached = removeRedundantNodes([...filteredNodes]);
-		cache[cacheNameId] = cached;        // Caching context for the same node
-		cache[cacheNameSrc] = cached;       // Caching context for a different node with similar content
-	}
-	return cached;
+	return processOrReturnCachedValue(originNode, ast, excludeOriginNode);
 }

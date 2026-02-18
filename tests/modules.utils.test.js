@@ -950,42 +950,42 @@ describe('UTILS: getDeclarationWithContext', async () => {
 	it(`TP-1: Call expression with function declaration`, () => {
 		const code = `function a() {return 1;}\na();`;
 		const ast = generateFlatAST(code);
-		const result = targetModule(ast.find(n => n.type === 'CallExpression'));
+		const result = targetModule(ast.find(n => n.type === 'CallExpression'), ast);
 		const expected = [ast[7], ast[1]];
 		assert.deepStrictEqual(result, expected);
 	});
 	it(`TP-2: Call expression with function expression`, () => {
 		const code = `const a = () => 2;\na();`;
 		const ast = generateFlatAST(code);
-		const result = targetModule(ast.find(n => n.type === 'CallExpression'));
+		const result = targetModule(ast.find(n => n.type === 'CallExpression'), ast);
 		const expected = [ast[7], ast[2]];
 		assert.deepStrictEqual(result, expected);
 	});
 	it(`TP-3: Nested call with FE`, () => {
 		const code = `const b = 3;\nconst a = () => b;\na();`;
 		const ast = generateFlatAST(code);
-		const result = targetModule(ast.find(n => n.type === 'CallExpression'));
+		const result = targetModule(ast.find(n => n.type === 'CallExpression'), ast);
 		const expected = [ast[11], ast[6], ast[2]];
 		assert.deepStrictEqual(result, expected);
 	});
 	it(`TP-4: Anti-debugging function overwrite`, () => {
 		const code = `function a() {}\na = {};\na.b = 2;\na = {};\na(a.b);`;
 		const ast = generateFlatAST(code);
-		const result = targetModule(ast.find(n => n.type === 'FunctionDeclaration'));
+		const result = targetModule(ast.find(n => n.type === 'FunctionDeclaration'), ast);
 		const expected = [ast[1], ast[9]];
 		assert.deepStrictEqual(result, expected);
 	});
 	it(`TP-5: Collect assignments on references`, () => {
 		const code = `let a = 1; function b(arg) {arg = 3;} b(a);`;
 		const ast = generateFlatAST(code);
-		const result = targetModule(ast.find(n => n.type === 'Identifier' && n.name === 'a'));
+		const result = targetModule(ast.find(n => n.type === 'Identifier' && n.name === 'a'), ast);
 		const expected = [ast[2], ast[14], ast[5]];
 		assert.deepStrictEqual(result, expected);
 	});
 	it(`TP-6: Collect relevant parents for anonymous FE`, () => {
 		const code = `(function() {})()`;
 		const ast = generateFlatAST(code);
-		const result = targetModule(ast.find(n => n.type === 'FunctionExpression'));
+		const result = targetModule(ast.find(n => n.type === 'FunctionExpression'), ast);
 		const expected = [ast[2]];
 		assert.deepStrictEqual(result, expected);
 	});
@@ -994,34 +994,43 @@ describe('UTILS: getDeclarationWithContext', async () => {
 		const ast = generateFlatAST(code);
 		const callNode = ast.find(n => n.type === 'CallExpression');
 		delete callNode.scriptHash; // Remove scriptHash property
-		const result = targetModule(callNode);
+		const result = targetModule(callNode, ast);
 		const expected = [ast.find(n => n.type === 'CallExpression'), ast.find(n => n.type === 'FunctionDeclaration')];
 		assert.deepStrictEqual(result, expected);
-	});
-	it(`TP-8: Node without nodeId should still work` , () => {
-		const code = `const x = 1; console.log(x);`;
-		const ast = generateFlatAST(code);
-		const callNode = ast.find(n => n.type === 'CallExpression');
-		delete callNode.nodeId; // Remove nodeId property
-		const result = targetModule(callNode);
-		assert.ok(Array.isArray(result));
-		assert.ok(result.length > 0);
 	});
 	it(`TN-1: Prevent collection before changes are applied` , () => {
 		const code = `function a() {}\na = {};\na.b = 2;\na = a.b;\na(a.b);`;
 		const ast = generateFlatAST(code);
 		ast[9].isMarked = true;
-		const result = targetModule(ast.find(n => n.src === 'a = a.b'), true);
+		const result = targetModule(ast.find(n => n.src === 'a = a.b'), ast, true);
 		const expected = [];
 		assert.deepStrictEqual(result, expected);
 	});
 	it(`TN-2: Handle null input gracefully` , () => {
-		const result = targetModule(null);
+		const code = `a;`;
+		const ast = generateFlatAST(code);
+		const result = targetModule(null, ast);
 		const expected = [];
 		assert.deepStrictEqual(result, expected);
 	});
 	it(`TN-3: Handle undefined input gracefully` , () => {
-		const result = targetModule(undefined);
+		const code = `a;`;
+		const ast = generateFlatAST(code);
+		const result = targetModule(undefined, ast);
+		const expected = [];
+		assert.deepStrictEqual(result, expected);
+	});
+	it(`TN-2: Handle ast null input gracefully` , () => {
+		const code = `a;`;
+		const ast = generateFlatAST(code);
+		const result = targetModule(ast[0], null);
+		const expected = [];
+		assert.deepStrictEqual(result, expected);
+	});
+	it(`TN-3: Handle ast undefined input gracefully` , () => {
+		const code = `a;`;
+		const ast = generateFlatAST(code);
+		const result = targetModule(ast[0], undefined);
 		const expected = [];
 		assert.deepStrictEqual(result, expected);
 	});

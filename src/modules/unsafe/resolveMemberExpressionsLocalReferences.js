@@ -71,7 +71,7 @@ export function resolveMemberExpressionsLocalReferencesTransform(arb, matches) {
 	for (let i = 0; i < matches.length; i++) {
 		const n = matches[i];
 		const relevantIdentifier = getMainDeclaredObjectOfMemberExpression(n);
-		const context = createOrderedSrc(getDeclarationWithContext(relevantIdentifier.declNode.parentNode));
+		const context = createOrderedSrc(getDeclarationWithContext(relevantIdentifier.declNode.parentNode, arb.ast));
 		
 		if (context) {
 			const src = `${context}\n${n.src}`;
