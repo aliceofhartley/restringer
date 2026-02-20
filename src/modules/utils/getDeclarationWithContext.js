@@ -221,14 +221,59 @@ function filterNodes(originNode, excludeOriginNode, collectedNodes){
 }
 
 /**
+ * Adds a node to the traversal stack if it hasn't been visited and is worth traversing.
+ * @param {ASTNode} node - Node to potentially add to stack
+ */
+function addToStack(stack, visitedNodes, addedNodes, node) {
+	if(!node.nodeId) throw 'bad';
+	if (!node || 
+		visitedNodes.has(node.nodeId) ||
+		addedNodes.has(node.nodeId) ||
+		SKIP_TRAVERSAL_TYPES.includes(node.type)) {
+		return;
+	}
+	addedNodes.add(node.nodeId);
+	stack.push(node.nodeId);
+}
+
+/**
+ * Adds targetNodes to stack.
+ * @param {number[]} stack - Working stack of Nodes
+ * @param {number[]} visitedNodes - Nodes to skip adding to stack
+ * @param {number[]} addedNodes - Nodes already on the stack
+ * @param {ASTNode[]} targetNodes - Nodes to add to stack
+ */
+function addNodesToStack(stack, visitedNodes, addedNodes, targetNodes){
+	for (let i = 0; i < targetNodes.length; i++) {
+		const targetNode = targetNodes[i];
+		if(!targetNode.nodeId) throw 'bad';
+		if (!visitedNodes.has(targetNode.nodeId)) stack.push(targetNode.nodeId);
+		// noinspection JSUnresolvedVariable
+		if (targetNode === targetNode.scope.block) {
+			// Collect out-of-scope variables used inside the scope
+			// noinspection JSUnresolvedReference
+			for (let j = 0; j < targetNode.scope.through.length; j++) {
+				// noinspection JSUnresolvedReference
+				addToStack(
+					stack, visitedNodes, addedNodes, 
+					targetNode.scope.through[j].identifier
+				);
+			}
+		}
+		for (let j = 0; j < targetNode?.childNodes.length; j++) {
+			addToStack(
+				stack, visitedNodes, addedNodes, targetNode.childNodes[j]);
+		}
+	}
+}
+
+/**
  * @param {ASTNode} originNode - The starting AST node to collect context for
  * @param {ASTNode[]} ast
  * @param {boolean} [excludeOriginNode=false] - Whether to exclude the origin node from results
  * @return {ASTNode[]} Array of context nodes (declarations, assignments, calls) relevant for evaluation
  */
 function _getDeclarationWithContext(originNode, ast, excludeOriginNode = false){
-	/** @type {number[]} */
-	const stack = [originNode.nodeId];   // The working stack for nodes to be reviewed
 	/** @type {ASTNode[]} */
 	const collected = [];         // These will be our context
 	/** @type {Set<number>} */
@@ -237,45 +282,11 @@ function _getDeclarationWithContext(originNode, ast, excludeOriginNode = false){
 	const addedNodes = new Set();  // Track nodes added to stack to avoid includes calls on stack.
 	/** @type {number[][]} */
 	const collectedRanges = [];   // Prevent collecting overlapping nodes
-	
-	/**
-	 * Adds a node to the traversal stack if it hasn't been visited and is worth traversing.
-	 * @param {ASTNode} node - Node to potentially add to stack
-	 */
-	function addToStack(node) {
-		if (!node || 
-			visitedNodes.has(node.nodeId) ||
-			addedNodes.has(node.nodeId) ||
-			SKIP_TRAVERSAL_TYPES.includes(node.type)) {
-			return;
-		}
-		addedNodes.add(node.nodeId);
-		stack.push(node.nodeId);
-	}
 
-	/**
-	 * Adds targetNodes to stack.
-	 * @param {ASTNode} targetNodes - Nodes to add to stack
-	 */
-	function addNodesToStack(targetNodes){
-		for (let i = 0; i < targetNodes.length; i++) {
-			const targetNode = targetNodes[i];
-			if (!visitedNodes.has(targetNode.nodeId)) stack.push(targetNode.nodeId);
-			// noinspection JSUnresolvedVariable
-			if (targetNode === targetNode.scope.block) {
-				// Collect out-of-scope variables used inside the scope
-				// noinspection JSUnresolvedReference
-				for (let j = 0; j < targetNode.scope.through.length; j++) {
-					// noinspection JSUnresolvedReference
-					addToStack(targetNode.scope.through[j].identifier);
-				}
-			}
-			for (let j = 0; j < targetNode?.childNodes.length; j++) {
-				addToStack(targetNode.childNodes[j]);
-			}
-		}
-	}
+	if(!originNode.nodeId) throw 'bad';
 
+	/** @type {number[]} */
+	const stack = [originNode.nodeId];   // The working stack for nodes to be reviewed
 	while (stack.length) {
 		const node = ast[stack.shift()];
 		if (visitedNodes.has(node.nodeId)) continue;
@@ -293,8 +304,7 @@ function _getDeclarationWithContext(originNode, ast, excludeOriginNode = false){
 		}
 
 		// For each node, whether collected or not, target relevant relative nodes for further review.
-		addNodesToStack(parseNode(node));
-
+		addNodesToStack(stack, visitedNodes, addedNodes, parseNode(node));
 	}
 	// Filter and deduplicate collected nodes
 	return filterNodes(originNode, excludeOriginNode, collected);
