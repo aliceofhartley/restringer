@@ -49,9 +49,9 @@
   },
   "homepage": "https://github.com/HumanSecurity/restringer#readme",
   "devDependencies": {
-    "@babel/eslint-parser": "^7.28.5",
+    "@babel/eslint-parser": "^7.15.8",
     "@babel/plugin-syntax-import-assertions": "^7.27.1",
-    "eslint": "^9.39.1",
+    "eslint": "^10.0.1",
     "globals": "^16.5.0",
     "husky": "^9.1.7"
   }
