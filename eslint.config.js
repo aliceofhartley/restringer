@@ -1,40 +1,21 @@
 import js from '@eslint/js';
-import path from 'node:path';
 import globals from 'globals';
-import {fileURLToPath} from 'node:url';
-import {FlatCompat} from '@eslint/eslintrc';
-import babelParser from "@babel/eslint-parser";
+import { defineConfig } from 'eslint/config';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const compat = new FlatCompat({
-	baseDirectory: __dirname,
-	recommendedConfig: js.configs.recommended,
-	allConfig: js.configs.all,
-});
-
-export default [
+export default defineConfig([
 	{
+		files: ['**/*.{js,mjs,cjs}'],
 		ignores: [
-			'tests/resources/',
+			'tests/resources/**',
 			'**/jquery*.js',
 			'**/*tmp*.*',
 			'**/*tmp*/',
-			"eslint.config.js",
-			"node_modules/",
+			'node_modules/',
 		],
-	},
-	...compat.extends('eslint:recommended'),
-	{
+		plugins: { js },
+		extends: ['js/recommended'],
 		languageOptions: {
-			parser: babelParser,
-			parserOptions: {
-				requireConfigFile: false,
-			},
-			globals: {
-				...globals.browser,
-				...globals.nodeBuiltin,
-			},
+			globals: globals.node,
 			ecmaVersion: 'latest',
 			sourceType: 'module',
 		},
@@ -42,11 +23,15 @@ export default [
 			indent: ['error', 'tab', {
 				SwitchCase: 1,
 			}],
+
 			'linebreak-style': ['error', 'unix'],
+
 			quotes: ['error', 'single', {
 				allowTemplateLiterals: true,
 			}],
+
 			semi: ['error', 'always'],
 			'no-empty': ['off'],
-		},
-	}];
+		}
+	},
+]);

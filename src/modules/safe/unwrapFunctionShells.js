@@ -53,7 +53,7 @@ function createUnwrappedFunction(outerFunction, innerFunction) {
  */
 export function unwrapFunctionShellsMatch(arb, candidateFilter = () => true) {
 	const relevantNodes = arb.ast[0].typeMap.FunctionExpression
-							.concat(arb.ast[0].typeMap.FunctionDeclaration);
+		.concat(arb.ast[0].typeMap.FunctionDeclaration);
 	const matches = [];
 	
 	for (let i = 0; i < relevantNodes.length; i++) {

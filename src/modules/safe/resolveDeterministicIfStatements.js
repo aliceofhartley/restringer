@@ -10,7 +10,7 @@
  */
 function isLiteralTruthy(value) {
 	// Handle special JavaScript falsy values
-	if (value === false || value === 0 || value === -0 || value === 0n ||
+	if (value === false || value === 0 || value === 0n ||
 		value === '' || value === null || value === undefined) {
 		return false;
 	}

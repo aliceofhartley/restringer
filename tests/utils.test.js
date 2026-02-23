@@ -1,7 +1,6 @@
 import assert from 'node:assert';
 import {describe, it} from 'node:test';
 import {parseArgs} from '../src/utils/parseArgs.js';
-const consolelog = console.log;
 
 describe('parseArgs tests', () => {
 	it('TP-1: Defaults', () => {

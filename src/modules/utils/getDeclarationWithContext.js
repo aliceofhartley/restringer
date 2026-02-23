@@ -225,7 +225,6 @@ function filterNodes(originNode, excludeOriginNode, collectedNodes){
  * @param {ASTNode} node - Node to potentially add to stack
  */
 function addToStack(stack, visitedNodes, addedNodes, node) {
-	if(!node.nodeId) throw 'bad';
 	if (!node || 
 		visitedNodes.has(node.nodeId) ||
 		addedNodes.has(node.nodeId) ||
@@ -246,7 +245,6 @@ function addToStack(stack, visitedNodes, addedNodes, node) {
 function addNodesToStack(stack, visitedNodes, addedNodes, targetNodes){
 	for (let i = 0; i < targetNodes.length; i++) {
 		const targetNode = targetNodes[i];
-		if(!targetNode.nodeId) throw 'bad';
 		if (!visitedNodes.has(targetNode.nodeId)) stack.push(targetNode.nodeId);
 		// noinspection JSUnresolvedVariable
 		if (targetNode === targetNode.scope.block) {
@@ -282,8 +280,6 @@ function _getDeclarationWithContext(originNode, ast, excludeOriginNode = false){
 	const addedNodes = new Set();  // Track nodes added to stack to avoid includes calls on stack.
 	/** @type {number[][]} */
 	const collectedRanges = [];   // Prevent collecting overlapping nodes
-
-	if(!originNode.nodeId) throw 'bad';
 
 	/** @type {number[]} */
 	const stack = [originNode.nodeId];   // The working stack for nodes to be reviewed

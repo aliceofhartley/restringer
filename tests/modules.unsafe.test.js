@@ -1,4 +1,4 @@
-/* eslint-disable no-unused-vars */
+ 
 import assert from 'node:assert';
 import {describe, it} from 'node:test';
 import {Arborist, applyIteratively, generateFlatAST} from 'flast';
